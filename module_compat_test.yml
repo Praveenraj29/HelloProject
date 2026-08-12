@@ -26,17 +26,13 @@
     # This list matches exactly what the note named:
     #   basic:         ping, copy, file
     #   dnf-backend:   dnf, yum, package, package_facts
-    #   SELinux:       selinux, seboolean, sefcontext
-    #   firewalld:     firewalld, firewalld_info
+    #   SELinux:       ansible.posix.selinux, ansible.posix.seboolean, community.general.sefcontext
+    #   firewalld:     ansible.posix.firewalld, ansible.posix.firewalld_info
     #
-    # NOTE: selinux / seboolean / sefcontext / firewalld / firewalld_info live
-    # in the community.general collection on most Ansible Core versions, not
-    # ansible.builtin. If these fail with "couldn't resolve module" rather
-    # than a Python import error, install the collection first:
-    #   ansible-galaxy collection install community.general
-    # and/or change the "name:" below to the fully-qualified form, e.g.
-    # community.general.selinux - check `ansible-doc -l | grep selinux` on
-    # your jump host to see what's actually available.
+    # These FQCNs were confirmed against THIS jump host via:
+    #   ansible-doc -l | grep -E "selinux|seboolean|sefcontext|firewalld"
+    # If you run this on a different control node, re-run that command first -
+    # collection placement varies by which collections/versions are installed.
     modules_to_test:
       # --- baseline / basic modules ---
       - name: ping
@@ -76,28 +72,33 @@
         args: {}
 
       # --- SELinux modules: all import python3-libselinux bindings ---
-      - name: selinux
+      # NOTE: on this jump host, selinux/seboolean resolve via ansible.posix,
+      # and sefcontext resolves via community.general - confirmed by running
+      # `ansible-doc -l | grep -E "selinux|seboolean|sefcontext|firewalld"`.
+      # If your jump host differs, adjust the "name:" fields below to match
+      # your own `ansible-doc -l` output.
+      - name: ansible.posix.selinux
         category: OS-Integrated
         risk: High
         args: { policy: targeted, state: enforcing }
 
-      - name: seboolean
+      - name: ansible.posix.seboolean
         category: OS-Integrated
         risk: High
         args: { name: httpd_can_network_connect, state: true, persistent: true }
 
-      - name: sefcontext
+      - name: community.general.sefcontext
         category: OS-Integrated
         risk: High
         args: { target: '/tmp/ansible_compat_test_dir(/.*)?', setype: httpd_sys_content_t, state: present }
 
       # --- firewalld modules: both import python3-firewall bindings ---
-      - name: firewalld
+      - name: ansible.posix.firewalld
         category: OS-Integrated
         risk: High
         args: { service: ssh, permanent: true, state: enabled }
 
-      - name: firewalld_info
+      - name: ansible.posix.firewalld_info
         category: OS-Integrated
         risk: Medium
         args: {}
