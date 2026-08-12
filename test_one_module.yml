@@ -1,0 +1,27 @@
+---
+# tasks/test_one_module.yml
+#
+# Included once per (interpreter, module) combination from module_compat_test.yml.
+# Forces ansible_python_interpreter for just this task, attempts the module
+# in check mode, and reports PASS or FAIL - never aborts the whole run.
+# Output is captured into the log file automatically via ansible.cfg's log_path.
+
+- name: "Test {{ combo.1.name }} under {{ combo.0 }}"
+  vars:
+    ansible_python_interpreter: "{{ combo.0 }}"
+  block:
+    - name: Attempt module in check mode
+      action:
+        module: "{{ combo.1.name }}"
+        args: "{{ combo.1.args }}"
+      check_mode: true
+      register: module_result
+
+    - name: Report PASS
+      debug:
+        msg: "[{{ inventory_hostname }}] {{ combo.1.name }} under {{ combo.0 }} -> PASS"
+
+  rescue:
+    - name: Report FAIL
+      debug:
+        msg: "[{{ inventory_hostname }}] {{ combo.1.name }} under {{ combo.0 }} -> FAIL: {{ ansible_failed_result.msg | default('unknown error') }}"
