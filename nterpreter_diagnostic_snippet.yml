@@ -1,0 +1,39 @@
+---
+# interpreter_diagnostic_snippet.yml
+#
+# Insert these two blocks into your existing validate_modules_plain.yml -
+# one right BEFORE "Test dnf", one right BEFORE "Test selinux". They print
+# the exact interpreter Ansible has cached for the host at that point, and
+# test the import directly through that same interpreter/context, so you
+# can see definitively whether dnf and selinux are actually using the
+# same or different interpreters within the same run.
+
+# --- insert immediately before "Test dnf" ---
+- name: "[DIAG] Show cached interpreter before dnf task"
+  debug:
+    msg: "Before dnf: ansible_facts.python.executable = {{ ansible_facts['python']['executable'] }}"
+
+- name: "[DIAG] Directly test 'import dnf' through the exact same interpreter/context"
+  ansible.builtin.command: "{{ ansible_facts['python']['executable'] }} -c \"import dnf; print(dnf.__file__)\""
+  register: diag_dnf_import
+  ignore_errors: true
+  changed_when: false
+
+- name: "[DIAG] Report direct import result"
+  debug:
+    msg: "Direct import dnf -> {{ 'FAIL: ' + (diag_dnf_import.stderr | default('')) if diag_dnf_import.rc != 0 else 'PASS: ' + diag_dnf_import.stdout }}"
+
+# --- insert immediately before "Test selinux" ---
+- name: "[DIAG] Show cached interpreter before selinux task"
+  debug:
+    msg: "Before selinux: ansible_facts.python.executable = {{ ansible_facts['python']['executable'] }}"
+
+- name: "[DIAG] Directly test 'import selinux' through the exact same interpreter/context"
+  ansible.builtin.command: "{{ ansible_facts['python']['executable'] }} -c \"import selinux; print(selinux.__file__)\""
+  register: diag_selinux_import
+  ignore_errors: true
+  changed_when: false
+
+- name: "[DIAG] Report direct import result"
+  debug:
+    msg: "Direct import selinux -> {{ 'FAIL: ' + (diag_selinux_import.stderr | default('')) if diag_selinux_import.rc != 0 else 'PASS: ' + diag_selinux_import.stdout }}"
