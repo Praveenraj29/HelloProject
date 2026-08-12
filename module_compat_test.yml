@@ -1,0 +1,122 @@
+---
+# module_compat_test.yml
+#
+# Purpose: actually RUN each OS-integrated module (dnf, firewalld,
+# selinux, etc.) in --check mode, once per interpreter discovered on
+# the host, and report PASS/FAIL with the real error text.
+#
+# Logging: this playbook prints results via debug tasks inside
+# tasks/test_one_module.yml. It does NOT write its own log file -
+# ansible.cfg (in this same folder) sets log_path so Ansible captures
+# the full run, including every debug message, to a plain text file.
+#
+# Non-destructive: every module runs with check_mode: true.
+# Still needs become: true because dnf/firewalld/selinux need root
+# to even evaluate what they'd change.
+#
+# Run:
+#   ansible-playbook -i inventory.ini module_compat_test.yml
+
+- name: Test OS-integrated module compatibility across interpreters
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    # This list matches exactly what the note named:
+    #   basic:         ping, copy, file
+    #   dnf-backend:   dnf, yum, package, package_facts
+    #   SELinux:       selinux, seboolean, sefcontext
+    #   firewalld:     firewalld, firewalld_info
+    #
+    # NOTE: selinux / seboolean / sefcontext / firewalld / firewalld_info live
+    # in the community.general collection on most Ansible Core versions, not
+    # ansible.builtin. If these fail with "couldn't resolve module" rather
+    # than a Python import error, install the collection first:
+    #   ansible-galaxy collection install community.general
+    # and/or change the "name:" below to the fully-qualified form, e.g.
+    # community.general.selinux - check `ansible-doc -l | grep selinux` on
+    # your jump host to see what's actually available.
+    modules_to_test:
+      # --- baseline / basic modules ---
+      - name: ping
+        category: Core/Generic
+        risk: Low
+        args: {}
+
+      - name: copy
+        category: Core/Generic
+        risk: Low
+        args: { content: "ansible python compat test", dest: /tmp/ansible_compat_test.txt }
+
+      - name: file
+        category: Core/Generic
+        risk: Low
+        args: { path: /tmp/ansible_compat_test_dir, state: directory }
+
+      # --- dnf-backend package modules: all import the same dnf python bindings ---
+      - name: dnf
+        category: OS-Integrated
+        risk: High
+        args: { name: vim-enhanced, state: present }
+
+      - name: yum
+        category: OS-Integrated
+        risk: High
+        args: { name: vim-enhanced, state: present }
+
+      - name: package
+        category: OS-Integrated
+        risk: High
+        args: { name: vim-enhanced, state: present }
+
+      - name: package_facts
+        category: OS-Integrated
+        risk: Medium
+        args: {}
+
+      # --- SELinux modules: all import python3-libselinux bindings ---
+      - name: selinux
+        category: OS-Integrated
+        risk: High
+        args: { policy: targeted, state: enforcing }
+
+      - name: seboolean
+        category: OS-Integrated
+        risk: High
+        args: { name: httpd_can_network_connect, state: true, persistent: true }
+
+      - name: sefcontext
+        category: OS-Integrated
+        risk: High
+        args: { target: '/tmp/ansible_compat_test_dir(/.*)?', setype: httpd_sys_content_t, state: present }
+
+      # --- firewalld modules: both import python3-firewall bindings ---
+      - name: firewalld
+        category: OS-Integrated
+        risk: High
+        args: { service: ssh, permanent: true, state: enabled }
+
+      - name: firewalld_info
+        category: OS-Integrated
+        risk: Medium
+        args: {}
+
+  tasks:
+    - name: Discover interpreters present on this host
+      raw: ls -1 /usr/bin/python3* 2>/dev/null
+      register: python_binaries
+      changed_when: false
+
+    - name: Build interpreter list
+      set_fact:
+        interpreter_paths: "{{ python_binaries.stdout_lines
+                               | select('match', '.*python3(\\.[0-9]+)?$')
+                               | list | unique }}"
+
+    - name: Run every module against every interpreter found on this host
+      include_tasks: tasks/test_one_module.yml
+      loop: "{{ interpreter_paths | product(modules_to_test) | list }}"
+      loop_control:
+        loop_var: combo
+        label: "{{ combo.0 }} -> {{ combo.1.name }}"
