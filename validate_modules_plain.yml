@@ -1,0 +1,99 @@
+---
+# validate_modules_plain.yml
+#
+# Plain playbook - one task per module named in the senior's note.
+# No custom PASS/FAIL logic - just normal Ansible tasks. Watch the
+# regular task-by-task output as it runs; ignore_errors keeps the
+# playbook going so every module gets tried even if earlier ones fail,
+# and the final PLAY RECAP shows the overall failed count per host.
+#
+# Uses whatever interpreter Ansible picks by default for each host.
+# To force a specific interpreter (e.g. to compare 3.6 vs 3.9), add:
+#   -e ansible_python_interpreter=/usr/bin/python3.6
+#
+# Run:
+#   ansible-playbook validate_modules_plain.yml --ask-become-pass
+
+- name: Validate modules named in the senior's note
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Test ping
+      ansible.builtin.ping:
+      ignore_errors: true
+
+    - name: Test copy
+      ansible.builtin.copy:
+        content: "ansible compat test"
+        dest: /tmp/ansible_compat_test.txt
+      check_mode: true
+      ignore_errors: true
+
+    - name: Test file
+      ansible.builtin.file:
+        path: /tmp/ansible_compat_test_dir
+        state: directory
+      check_mode: true
+      ignore_errors: true
+
+    - name: Test dnf
+      ansible.builtin.dnf:
+        name: vim-enhanced
+        state: present
+      check_mode: true
+      ignore_errors: true
+
+    - name: Test yum
+      ansible.builtin.yum:
+        name: vim-enhanced
+        state: present
+      check_mode: true
+      ignore_errors: true
+
+    - name: Test package
+      ansible.builtin.package:
+        name: vim-enhanced
+        state: present
+      check_mode: true
+      ignore_errors: true
+
+    - name: Test package_facts
+      ansible.builtin.package_facts:
+      ignore_errors: true
+
+    - name: Test selinux
+      ansible.posix.selinux:
+        policy: targeted
+        state: enforcing
+      check_mode: true
+      ignore_errors: true
+
+    - name: Test seboolean
+      ansible.posix.seboolean:
+        name: httpd_can_network_connect
+        state: true
+        persistent: true
+      check_mode: true
+      ignore_errors: true
+
+    - name: Test sefcontext
+      community.general.sefcontext:
+        target: '/tmp/ansible_compat_test_dir(/.*)?'
+        setype: httpd_sys_content_t
+        state: present
+      check_mode: true
+      ignore_errors: true
+
+    - name: Test firewalld
+      ansible.posix.firewalld:
+        service: ssh
+        permanent: true
+        state: enabled
+      check_mode: true
+      ignore_errors: true
+
+    - name: Test firewalld_info
+      ansible.posix.firewalld_info:
+      ignore_errors: true
