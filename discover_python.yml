@@ -1,0 +1,72 @@
+---
+# discover_python.yml
+#
+# Purpose: find out, from the system itself, exactly what Python
+# interpreters exist on each target host, which one is the default,
+# and whether the OS-level bindings (dnf, selinux, firewall, rpm) are
+# importable under EACH interpreter. No assumptions, no need to ask
+# anyone what was upgraded - this reads it straight off the host.
+#
+# Logging: this playbook prints results via debug tasks. It does NOT
+# write its own log file - instead, ansible.cfg (in this same folder)
+# sets log_path so Ansible itself captures the full run, including
+# every debug message below, to a plain text file automatically.
+#
+# Run:
+#   ansible-playbook -i inventory.ini discover_python.yml
+
+- name: Discover Python interpreters and OS binding compatibility
+  hosts: all
+  gather_facts: true
+
+  vars:
+    # These are the actual Python imports behind the modules named in the note:
+    #   dnf, yum, package, package_facts   -> all import 'dnf' underneath on RHEL8/Alma8
+    #   selinux, seboolean, sefcontext     -> all import 'selinux'
+    #   firewalld, firewalld_info          -> both import 'firewall'
+    #   copy, file, ping                   -> stdlib only, not checked here (no OS binding to test)
+    bindings_to_check:
+      - { name: dnf,      import: dnf }
+      - { name: selinux,  import: selinux }
+      - { name: firewall, import: firewall }
+      - { name: rpm,      import: rpm }
+
+  tasks:
+    - name: List every python3 interpreter present on the host
+      # raw = runs over plain SSH, doesn't depend on any particular
+      # interpreter being correct - safe to use even before we know
+      # which python actually works.
+      raw: ls -1 /usr/bin/python3* 2>/dev/null
+      register: python_binaries
+      changed_when: false
+
+    - name: Resolve what /usr/bin/python3 currently points to
+      raw: readlink -f /usr/bin/python3
+      register: python_default
+      changed_when: false
+
+    - name: Build a clean, de-duplicated interpreter list
+      set_fact:
+        interpreter_paths: "{{ python_binaries.stdout_lines
+                               | select('match', '.*python3(\\.[0-9]+)?$')
+                               | list | unique }}"
+
+    - name: Check every binding against every interpreter found
+      raw: "{{ item.0 }} -c 'import {{ item.1.import }}' 2>&1"
+      loop: "{{ interpreter_paths | product(bindings_to_check) | list }}"
+      loop_control:
+        label: "{{ item.0 }} -> {{ item.1.name }}"
+      register: binding_checks
+      changed_when: false
+      failed_when: false
+
+    - name: Report each result (captured into the log file by ansible.cfg)
+      debug:
+        msg: >-
+          [{{ inventory_hostname }}] {{ item.item.0 }}
+          (default: {{ 'yes' if item.item.0 == python_default.stdout else 'no' }})
+          -> {{ item.item.1.name }}:
+          {{ 'PASS' if item.rc == 0 else 'FAIL - ' + (item.stdout | default('')) }}
+      loop: "{{ binding_checks.results }}"
+      loop_control:
+        label: "{{ item.item.0 }} / {{ item.item.1.name }}"
